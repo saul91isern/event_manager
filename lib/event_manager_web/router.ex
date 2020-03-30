@@ -7,5 +7,7 @@ defmodule EventManagerWeb.Router do
 
   scope "/api", EventManagerWeb do
     pipe_through :api
+
+    resources("/events", EventController, only: [:index])
   end
 end
