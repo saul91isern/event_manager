@@ -1,0 +1,30 @@
+# Use postgres/example user/password credentials
+version: "3.4"
+
+services:
+  postgres:
+    image: postgres:9.6.10-alpine
+    restart: always
+    healthcheck:
+      test: echo "SELECT 1" | psql --username postgres --quiet --no-align --tuples-only | grep -q 1 || exit 1
+      interval: 60ss
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  service:
+    image: saul91isern/cpc-app:20200331191243
+    command: ci/build.sh
+    environment:
+      APP_VERSION: "0.1.0"
+      HOME: /tmp # CURRENT_UID doesn't have a home
+      MIX_HOME: /code/.mix
+    user: ${CURRENT_UID-0:0}
+    working_dir: /code
+    ports:
+      - "4000:4000"
+    depends_on:
+      - postgres
+    volumes:
+      - "${CI_PROJECT_DIR}:/code"
+
