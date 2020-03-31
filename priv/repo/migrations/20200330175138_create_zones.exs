@@ -12,6 +12,5 @@ defmodule EventManager.Repo.Migrations.CreateZones do
       timestamps()
     end
 
-    create(unique_index(:events, [:external_id], name: :unique_zone))
   end
 end

@@ -13,7 +13,5 @@ defmodule EventManager.Repo.Migrations.CreateEvents do
       timestamps()
     end
 
-    create(unique_index(:events, [:external_id], name: :unique_event))
-
   end
 end
