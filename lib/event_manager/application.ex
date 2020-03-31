@@ -11,9 +11,10 @@ defmodule EventManager.Application do
       # Start the Ecto repository
       EventManager.Repo,
       # Start the endpoint when the application starts
-      EventManagerWeb.Endpoint
+      EventManagerWeb.Endpoint,
       # Starts a worker by calling: EventManager.Worker.start_link(arg)
       # {EventManager.Worker, arg},
+      EventManager.Events.EventLoader
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

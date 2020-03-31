@@ -21,7 +21,7 @@ defmodule EventManager.Events.Event do
   @doc false
   def changeset(event, attrs) do
     event
-    |> cast(attrs, [:external_id, :event_date, :sell_from, :sell_to, :sold_out])
+    |> cast(attrs, [:external_id, :event_date, :sell_from, :sell_to, :sold_out, :base_id])
     |> validate_required([:external_id, :event_date, :sell_from, :sell_to, :sold_out])
   end
 end

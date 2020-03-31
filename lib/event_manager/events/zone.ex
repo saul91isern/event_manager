@@ -18,7 +18,7 @@ defmodule EventManager.Events.Zone do
   @doc false
   def changeset(zone, attrs) do
     zone
-    |> cast(attrs, [:external_id, :capacity, :name, :numbered, :max_price])
+    |> cast(attrs, [:external_id, :capacity, :name, :numbered, :max_price, :event_id])
     |> validate_required([:external_id, :capacity, :name, :numbered, :max_price])
   end
 end

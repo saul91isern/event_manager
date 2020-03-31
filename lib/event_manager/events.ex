@@ -8,6 +8,116 @@ defmodule EventManager.Events do
 
   alias EventManager.Events.Base
 
+  def load([]), do: {:ok, []}
+
+  def load(base_events) do
+    Repo.transaction(fn ->
+      with {true, bases} <- load_base_events(base_events),
+           {true, events} <- load_events(bases),
+           {true, _} <- load_zones(events) do
+        bases
+      else
+        _ -> Repo.rollback({:error, %{error: :failed_upload}})
+      end
+    end)
+  end
+
+  defp load_base_events(base_events) do
+    bases = Enum.map(base_events, &load_base_event/1)
+    {Enum.all?(bases, &(elem(&1, 0) == :ok)), bases}
+  end
+
+  defp load_events(events) do
+    events =
+      events
+      |> Enum.map(&Map.put(elem(&1, 2), "base", elem(&1, 1)))
+      |> Enum.map(&load_event/1)
+
+    {Enum.all?(events, &(elem(&1, 0) == :ok)), events}
+  end
+
+  defp load_zones(events) do
+    zones =
+      events
+      |> Enum.map(fn {_, event, zones} ->
+        event_id = Map.get(event, :id)
+        put_id(event_id, zones)
+      end)
+      |> List.flatten()
+      |> Enum.map(&load_zone/1)
+
+    {Enum.all?(events, &(elem(&1, 0) == :ok)), zones}
+  end
+
+  defp load_base_event(%{"#content" => %{"event" => event}} = base) do
+    external_id = Map.get(base, "-base_event_id")
+    sell_mode = Map.get(base, "-sell_mode")
+    title = Map.get(base, "-title")
+
+    external_id
+    |> get_base_by()
+    |> case do
+      nil ->
+        attrs = %{external_id: external_id, title: title, sell_mode: sell_mode}
+
+        Tuple.append(
+          create_base(attrs),
+          event
+        )
+
+      base ->
+        {:ok, base, event}
+    end
+  end
+
+  defp load_event(%{"#content" => %{"zone" => zones}, "base" => base} = event) do
+    event_date = Map.get(event, "-event_date")
+    external_id = Map.get(event, "-event_id")
+    sell_from = Map.get(event, "-sell_from")
+    sold_out = Map.get(event, "-sold_out")
+    sell_to = Map.get(event, "-sell_to")
+    base_id = Map.get(base, :id)
+
+    attrs = %{
+      external_id: external_id,
+      event_date: event_date,
+      sell_from: sell_from,
+      sold_out: sold_out,
+      sell_to: sell_to,
+      base_id: base_id
+    }
+
+    Tuple.append(
+      create_event(attrs),
+      zones
+    )
+  end
+
+  defp load_zone(zone) do
+    capacity = Map.get(zone, "-capacity")
+    max_price = Map.get(zone, "-max_price")
+    name = Map.get(zone, "-name")
+    numbered = Map.get(zone, "-numbered")
+    external_id = Map.get(zone, "-zone_id")
+    event_id = Map.get(zone, "event_id")
+
+    attrs = %{
+      capacity: capacity,
+      name: name,
+      max_price: max_price,
+      numbered: numbered,
+      external_id: external_id,
+      event_id: event_id
+    }
+
+    create_zone(attrs)
+  end
+
+  defp put_id(event_id, %{} = zone), do: [Map.put(zone, "event_id", event_id)]
+
+  defp put_id(event_id, zones) when is_list(zones),
+    do: Enum.map(zones, &Map.put(&1, "event_id", event_id))
+
   @doc """
   Returns the list of bases.
 
@@ -22,20 +132,18 @@ defmodule EventManager.Events do
   end
 
   @doc """
-  Gets a single base.
-
-  Raises `Ecto.NoResultsError` if the Base does not exist.
+  Gets a single base by external id.
 
   ## Examples
 
-      iex> get_base!(123)
+      iex> get_base_by(123)
       %Base{}
 
-      iex> get_base!(456)
-      ** (Ecto.NoResultsError)
+      iex> get_base_by(456)
+      ** nil
 
   """
-  def get_base!(id), do: Repo.get!(Base, id)
+  def get_base_by(external_id), do: Repo.get_by(Base, external_id: external_id)
 
   @doc """
   Creates a base.
@@ -53,40 +161,6 @@ defmodule EventManager.Events do
     %Base{}
     |> Base.changeset(attrs)
     |> Repo.insert()
-  end
-
-  @doc """
-  Updates a base.
-
-  ## Examples
-
-      iex> update_base(base, %{field: new_value})
-      {:ok, %Base{}}
-
-      iex> update_base(base, %{field: bad_value})
-      {:error, %Ecto.Changeset{}}
-
-  """
-  def update_base(%Base{} = base, attrs) do
-    base
-    |> Base.changeset(attrs)
-    |> Repo.update()
-  end
-
-  @doc """
-  Deletes a base.
-
-  ## Examples
-
-      iex> delete_base(base)
-      {:ok, %Base{}}
-
-      iex> delete_base(base)
-      {:error, %Ecto.Changeset{}}
-
-  """
-  def delete_base(%Base{} = base) do
-    Repo.delete(base)
   end
 
   @doc """
@@ -113,25 +187,31 @@ defmodule EventManager.Events do
       [%Event{}, ...]
 
   """
-  def list_events do
-    Repo.all(Event)
+  def list_events(attrs \\ %{}) do
+    dynamic = true
+    dynamic = build_from(attrs, dynamic)
+    dynamic = build_to(attrs, dynamic)
+
+    Event
+    |> join(:inner, [e, be], be in "bases", on: be.id == e.base_id)
+    |> where(^dynamic)
+    |> where([_e, be], be.sell_mode == "online")
+    |> select([e, _], e)
+    |> Repo.all()
+    |> Repo.preload([:base, :zones])
   end
 
-  @doc """
-  Gets a single event.
+  defp build_from(%{"start_date" => start_date}, dynamic) when not is_nil(start_date) do
+    dynamic([e, _be], field(e, :event_date) >= ^start_date and ^dynamic)
+  end
 
-  Raises `Ecto.NoResultsError` if the Event does not exist.
+  defp build_from(_, dynamic), do: dynamic
 
-  ## Examples
+  defp build_to(%{"end_date" => end_date}, dynamic) when not is_nil(end_date) do
+    dynamic([e, _be], field(e, :event_date) <= ^end_date and ^dynamic)
+  end
 
-      iex> get_event!(123)
-      %Event{}
-
-      iex> get_event!(456)
-      ** (Ecto.NoResultsError)
-
-  """
-  def get_event!(id), do: Repo.get!(Event, id)
+  defp build_to(_, dynamic), do: dynamic
 
   @doc """
   Creates a event.
@@ -149,40 +229,6 @@ defmodule EventManager.Events do
     %Event{}
     |> Event.changeset(attrs)
     |> Repo.insert()
-  end
-
-  @doc """
-  Updates a event.
-
-  ## Examples
-
-      iex> update_event(event, %{field: new_value})
-      {:ok, %Event{}}
-
-      iex> update_event(event, %{field: bad_value})
-      {:error, %Ecto.Changeset{}}
-
-  """
-  def update_event(%Event{} = event, attrs) do
-    event
-    |> Event.changeset(attrs)
-    |> Repo.update()
-  end
-
-  @doc """
-  Deletes a event.
-
-  ## Examples
-
-      iex> delete_event(event)
-      {:ok, %Event{}}
-
-      iex> delete_event(event)
-      {:error, %Ecto.Changeset{}}
-
-  """
-  def delete_event(%Event{} = event) do
-    Repo.delete(event)
   end
 
   @doc """
@@ -214,22 +260,6 @@ defmodule EventManager.Events do
   end
 
   @doc """
-  Gets a single zone.
-
-  Raises `Ecto.NoResultsError` if the Zone does not exist.
-
-  ## Examples
-
-      iex> get_zone!(123)
-      %Zone{}
-
-      iex> get_zone!(456)
-      ** (Ecto.NoResultsError)
-
-  """
-  def get_zone!(id), do: Repo.get!(Zone, id)
-
-  @doc """
   Creates a zone.
 
   ## Examples
@@ -245,40 +275,6 @@ defmodule EventManager.Events do
     %Zone{}
     |> Zone.changeset(attrs)
     |> Repo.insert()
-  end
-
-  @doc """
-  Updates a zone.
-
-  ## Examples
-
-      iex> update_zone(zone, %{field: new_value})
-      {:ok, %Zone{}}
-
-      iex> update_zone(zone, %{field: bad_value})
-      {:error, %Ecto.Changeset{}}
-
-  """
-  def update_zone(%Zone{} = zone, attrs) do
-    zone
-    |> Zone.changeset(attrs)
-    |> Repo.update()
-  end
-
-  @doc """
-  Deletes a zone.
-
-  ## Examples
-
-      iex> delete_zone(zone)
-      {:ok, %Zone{}}
-
-      iex> delete_zone(zone)
-      {:error, %Ecto.Changeset{}}
-
-  """
-  def delete_zone(%Zone{} = zone) do
-    Repo.delete(zone)
   end
 
   @doc """
