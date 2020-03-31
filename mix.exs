@@ -4,13 +4,24 @@ defmodule EventManager.MixProject do
   def project do
     [
       app: :event_manager,
-      version: "0.1.0",
-      elixir: "~> 1.5",
+      version:
+      case System.get_env("APP_VERSION") do
+        nil -> "0.1.0-local"
+        v -> v
+      end,
+      elixir: "~> 1.10",
       elixirc_paths: elixirc_paths(Mix.env()),
       compilers: [:phoenix, :gettext] ++ Mix.compilers(),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      releases: [
+        event_manager: [
+          include_executables_for: [:unix],
+          applications: [runtime_tools: :permanent],
+          steps: [:assemble, &copy_bin_files/1, :tar]
+        ]
+      ]
     ]
   end
 
@@ -40,7 +51,9 @@ defmodule EventManager.MixProject do
       {:postgrex, ">= 0.0.0"},
       {:gettext, "~> 0.11"},
       {:jason, "~> 1.0"},
-      {:plug_cowboy, "~> 2.0"}
+      {:plug_cowboy, "~> 2.0"},
+      {:httpoison, "~> 1.6"},
+      {:elixir_xml_to_map, "~> 1.0"}
     ]
   end
 
@@ -56,5 +69,10 @@ defmodule EventManager.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate", "test"]
     ]
+  end
+
+  defp copy_bin_files(release) do
+    File.cp_r("rel/bin", Path.join(release.path, "bin"))
+    release
   end
 end

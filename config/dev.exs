@@ -5,7 +5,7 @@ config :event_manager, EventManager.Repo,
   username: "postgres",
   password: "postgres",
   database: "event_manager_dev",
-  hostname: "localhost",
+  hostname: "postgres",
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
 
