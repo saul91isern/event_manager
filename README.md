@@ -63,6 +63,8 @@ If you have any problems during the installation, please do not hesitate to cont
 	- Better analysis of the xml model an its transalte to the app's model
 	- Best error management
 	- More covering of the code by unitary tests.
+  - Xml url is hardcoded on events loader. It should be provided by an external variable.
+  - Events loading period of 24h hours is hardcoded. It should be configurable.
 
 #### Alternative Running:
 
