@@ -43,3 +43,4 @@ priv/static/swagger.json
 .iex.exs
 local
 data
+.mix/*
